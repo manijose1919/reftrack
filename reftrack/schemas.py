@@ -103,6 +103,16 @@ class MaintenanceEventIn(BaseModel):
     event_date: date
     event_type: EventType
     notes: str = ""
+    passed: bool | None = None  # verification tests only
+
+
+class VoidEventIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class PlanIn(BaseModel):
+    plan_date: date
+    plan_notes: str = Field(min_length=1)
 
 
 class ServiceEventOut(ORMModel):
@@ -116,6 +126,9 @@ class ServiceEventOut(ORMModel):
     notes: str
     leak_rate_pct: float | None
     threshold_exceeded: bool
+    passed: bool | None
+    voided: bool
+    void_reason: str
 
 
 # ---- Compliance ------------------------------------------------------------
@@ -128,3 +141,19 @@ class ComplianceCaseOut(ORMModel):
     leak_rate_pct: float
     status: CaseStatus
     resolved_date: date | None
+    plan_date: date | None
+    plan_notes: str
+
+
+class ShopProfileIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    address: str = ""
+    phone: str = ""
+    epa_contact: str = ""
+
+
+class ShopProfileOut(ORMModel):
+    name: str
+    address: str
+    phone: str
+    epa_contact: str

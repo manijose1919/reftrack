@@ -9,10 +9,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reftrack import compliance, service
+from reftrack import auth, compliance, service
 from reftrack.database import get_db
 from reftrack.models import (
     Appliance,
+    ComplianceCase,
     Customer,
     Cylinder,
     CylinderKind,
@@ -24,6 +25,7 @@ from reftrack.models import (
 
 router = APIRouter(include_in_schema=False)
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+templates.env.globals["auth_enabled"] = auth.enabled
 
 MAINTENANCE_TYPES = [
     EventType.LEAK_REPAIR,
@@ -88,6 +90,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse(request, "dashboard.html", {
         "statuses": summary["statuses"],
         "counts": summary["counts"],
+        "chronic_count": summary["chronic_count"],
     })
 
 
@@ -107,9 +110,24 @@ def _registry_ctx(db: Session, *, error: str | None = None,
         "customers": db.execute(select(Customer).order_by(Customer.name)).scalars().all(),
         "technicians": db.execute(select(Technician).order_by(Technician.name)).scalars().all(),
         "cylinders": db.execute(select(Cylinder).order_by(Cylinder.serial)).scalars().all(),
+        "shop": service.get_shop_profile(db),
         "error": error,
         "message": message,
     }
+
+
+@router.post("/registry/shop")
+def ui_update_shop(
+    name: str = Form(...), address: str = Form(""), phone: str = Form(""),
+    epa_contact: str = Form(""), db: Session = Depends(get_db),
+):
+    profile = service.get_shop_profile(db)
+    profile.name = name.strip() or profile.name
+    profile.address = address.strip()
+    profile.phone = phone.strip()
+    profile.epa_contact = epa_contact.strip()
+    db.commit()
+    return RedirectResponse("/registry", status_code=303)
 
 
 @router.get("/registry", response_class=HTMLResponse)
@@ -196,21 +214,72 @@ def ui_maintenance(
     event_type: EventType = Form(...),
     event_date: date = Form(...),
     notes: str = Form(""),
+    result: str = Form(""),  # "", "pass", or "fail" (verifications only)
     db: Session = Depends(get_db),
 ):
     appliance = _appliance_or_404(db, appliance_id)
     technician = db.get(Technician, technician_id)
     if technician is None:
         return _panel_response(request, db, appliance, error="Unknown technician.")
+    passed = {"pass": True, "fail": False}.get(result)
     try:
         service.log_maintenance_event(
             db, appliance=appliance, technician=technician,
             event_date=event_date, event_type=event_type, notes=notes,
+            passed=passed,
         )
     except service.DomainError as exc:
         return _panel_response(request, db, appliance, error=str(exc))
+    msg = f"Logged: {event_type.label}."
+    if event_type == EventType.VERIFICATION_FOLLOWUP and passed is False:
+        msg += " Failed verification — a new 30-day repair case was opened."
+    return _panel_response(request, db, appliance, message=msg)
+
+
+@router.post("/appliances/{appliance_id}/events/{event_id}/void",
+             response_class=HTMLResponse)
+def ui_void_event(
+    request: Request,
+    appliance_id: int,
+    event_id: int,
+    db: Session = Depends(get_db),
+):
+    appliance = _appliance_or_404(db, appliance_id)
+    event = db.get(ServiceEvent, event_id)
+    if event is None or event.appliance_id != appliance.id:
+        return _panel_response(request, db, appliance, error="Unknown event.")
+    reason = request.headers.get("HX-Prompt", "").strip()
+    try:
+        service.void_event(db, event=event, reason=reason)
+    except service.DomainError as exc:
+        return _panel_response(request, db, appliance, error=str(exc))
+    return _panel_response(
+        request, db, appliance,
+        message="Event voided; inventory restored and leak rates recomputed.",
+    )
+
+
+@router.post("/appliances/{appliance_id}/cases/{case_id}/plan",
+             response_class=HTMLResponse)
+def ui_record_plan(
+    request: Request,
+    appliance_id: int,
+    case_id: int,
+    plan_date: date = Form(...),
+    plan_notes: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    appliance = _appliance_or_404(db, appliance_id)
+    case = db.get(ComplianceCase, case_id)
+    if case is None or case.appliance_id != appliance.id:
+        return _panel_response(request, db, appliance, error="Unknown case.")
+    try:
+        service.record_plan(db, case=case, plan_date=plan_date,
+                            plan_notes=plan_notes)
+    except service.DomainError as exc:
+        return _panel_response(request, db, appliance, error=str(exc))
     return _panel_response(request, db, appliance,
-                           message=f"Logged: {event_type.label}.")
+                           message="Retrofit/retirement plan recorded.")
 
 
 # ---- Registry creation (plain form posts) --------------------------------------

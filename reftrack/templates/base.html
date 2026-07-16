@@ -45,7 +45,9 @@
         <li><a href="/">Dashboard</a></li>
         <li><a href="/registry">Registry</a></li>
         <li><a href="/api/reports/cylinders.csv">Cylinder CSV</a></li>
+        <li><a href="/api/reports/chronic.csv">Chronic CSV</a></li>
         <li><a href="/docs">API</a></li>
+        {% if auth_enabled() %}<li><a href="/logout">Sign out</a></li>{% endif %}
       </ul>
     </nav>
   </header>

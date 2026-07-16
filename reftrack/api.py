@@ -173,9 +173,53 @@ def maintenance(payload: schemas.MaintenanceEventIn, db: Session = Depends(get_d
             event_date=payload.event_date,
             event_type=payload.event_type,
             notes=payload.notes,
+            passed=payload.passed,
         )
     except service.DomainError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+@router.post(
+    "/events/{event_id}/void", response_model=schemas.ServiceEventOut
+)
+def void_event(
+    event_id: int, payload: schemas.VoidEventIn, db: Session = Depends(get_db)
+):
+    event = _get_or_404(db, ServiceEvent, event_id)
+    try:
+        return service.void_event(db, event=event, reason=payload.reason)
+    except service.DomainError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+@router.post("/cases/{case_id}/plan", response_model=schemas.ComplianceCaseOut)
+def record_plan(
+    case_id: int, payload: schemas.PlanIn, db: Session = Depends(get_db)
+):
+    case = _get_or_404(db, ComplianceCase, case_id)
+    try:
+        return service.record_plan(
+            db, case=case, plan_date=payload.plan_date,
+            plan_notes=payload.plan_notes,
+        )
+    except service.DomainError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+# ---- Shop profile ------------------------------------------------------------
+
+@router.get("/shop", response_model=schemas.ShopProfileOut)
+def get_shop(db: Session = Depends(get_db)):
+    return service.get_shop_profile(db)
+
+
+@router.put("/shop", response_model=schemas.ShopProfileOut)
+def update_shop(payload: schemas.ShopProfileIn, db: Session = Depends(get_db)):
+    profile = service.get_shop_profile(db)
+    for field, value in payload.model_dump().items():
+        setattr(profile, field, value.strip())
+    db.commit()
+    return profile
 
 
 # ---- Compliance cases ------------------------------------------------------
@@ -193,6 +237,7 @@ def compliance_summary(db: Session = Depends(get_db)):
     summary = compliance.shop_summary(db, date.today())
     return {
         "total": summary["total"],
+        "chronic_count": summary["chronic_count"],
         "counts": {s.value: n for s, n in summary["counts"].items()},
         "appliances": [
             {
@@ -244,5 +289,16 @@ def cylinder_report_csv(db: Session = Depends(get_db)):
         media_type="text/csv",
         headers={
             "Content-Disposition": 'attachment; filename="cylinder_inventory.csv"'
+        },
+    )
+
+
+@router.get("/reports/chronic.csv")
+def chronic_report_csv(db: Session = Depends(get_db)):
+    return Response(
+        reports.chronic_csv(db),
+        media_type="text/csv",
+        headers={
+            "Content-Disposition": 'attachment; filename="chronic_leakers.csv"'
         },
     )

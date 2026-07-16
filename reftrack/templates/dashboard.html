@@ -3,6 +3,14 @@
 {% block content %}
 <h2>Compliance Dashboard</h2>
 
+{% if chronic_count and chronic_count > 0 %}
+<div class="flash-error">
+  ⚠ <b>{{ chronic_count }}</b> appliance(s) have exceeded a <b>125%</b> annualized leak
+  rate — chronically leaking appliance reporting may apply (40 CFR 82.157(j)).
+  <a href="/api/reports/chronic.csv">Download the chronic-leaker report</a>.
+</div>
+{% endif %}
+
 <div class="statgrid">
   {% for status, count in counts.items() %}
   <div class="stat">

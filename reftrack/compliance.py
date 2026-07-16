@@ -53,6 +53,7 @@ def latest_leak_rate(db: Session, appliance_id: int) -> float | None:
             ServiceEvent.appliance_id == appliance_id,
             ServiceEvent.event_type == EventType.CHARGE_ADDED,
             ServiceEvent.leak_rate_pct.is_not(None),
+            ServiceEvent.voided == False,  # noqa: E712
         )
         .order_by(ServiceEvent.event_date.desc(), ServiceEvent.id.desc())
         .limit(1)
@@ -97,10 +98,36 @@ def appliance_status(
     )
 
 
+# Appliances >= 50 lbs leaking above 125% annualized trigger an additional
+# EPA reporting obligation ("chronic leaker", 40 CFR 82.157(j)).
+CHRONIC_LEAK_PCT = 125.0
+
+
+def chronic_events(db: Session) -> list[ServiceEvent]:
+    """All non-voided additions whose annualized rate exceeded 125%."""
+    stmt = (
+        select(ServiceEvent)
+        .join(Appliance, ServiceEvent.appliance_id == Appliance.id)
+        .where(
+            ServiceEvent.event_type == EventType.CHARGE_ADDED,
+            ServiceEvent.voided == False,  # noqa: E712
+            ServiceEvent.leak_rate_pct > CHRONIC_LEAK_PCT,
+            Appliance.full_charge_lbs >= 50.0,
+        )
+        .order_by(ServiceEvent.event_date)
+    )
+    return list(db.execute(stmt).scalars())
+
+
 def shop_summary(db: Session, today: date) -> dict:
     appliances = db.execute(select(Appliance).order_by(Appliance.name)).scalars().all()
     statuses = [appliance_status(db, a, today) for a in appliances]
     counts = {s: 0 for s in Status}
     for st in statuses:
         counts[st.status] += 1
-    return {"statuses": statuses, "counts": counts, "total": len(statuses)}
+    return {
+        "statuses": statuses,
+        "counts": counts,
+        "total": len(statuses),
+        "chronic_count": len({e.appliance_id for e in chronic_events(db)}),
+    }

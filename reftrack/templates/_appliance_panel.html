@@ -10,22 +10,53 @@
     <div class="stat"><b>{% if st.open_case %}{{ st.open_case.due_date.isoformat() }}{% else %}—{% endif %}</b><span>Repair due</span></div>
   </div>
 
+  {% if st.open_case %}
+  <h4>Open Compliance Case</h4>
+  <p>
+    Opened {{ st.open_case.opened_date.isoformat() }} at {{ "%.2f"|format(st.open_case.leak_rate_pct) }}% ·
+    repair due <b>{{ st.open_case.due_date.isoformat() }}</b>
+    {% if st.open_case.plan_date %}
+      · plan recorded {{ st.open_case.plan_date.isoformat() }}: {{ st.open_case.plan_notes }}
+    {% endif %}
+  </p>
+  {% if not st.open_case.plan_date %}
+  <form hx-post="/appliances/{{ appliance.id }}/cases/{{ st.open_case.id }}/plan" hx-target="#panel" hx-swap="outerHTML">
+    <fieldset>
+      <legend>Record Retrofit/Retirement Plan (required if not repaired in 30 days)</legend>
+      <div class="grid">
+        <label>Plan date <input type="date" name="plan_date" value="{{ today }}" required></label>
+        <label>Plan <input type="text" name="plan_notes" placeholder="e.g. Retrofit to R-448A by Q4; PO #1182" required></label>
+      </div>
+      <button type="submit" class="secondary">Record plan</button>
+    </fieldset>
+  </form>
+  {% endif %}
+  {% endif %}
+
   <h4>Service History</h4>
   <table>
-    <thead><tr><th>Date</th><th>Event</th><th>Technician</th><th>Lbs</th><th>Cylinder</th><th>Leak rate</th><th>Notes</th></tr></thead>
+    <thead><tr><th>Date</th><th>Event</th><th>Technician</th><th>Lbs</th><th>Cylinder</th><th>Leak rate</th><th>Notes</th><th></th></tr></thead>
     <tbody>
       {% for ev in events %}
-      <tr {% if ev.threshold_exceeded %}style="background:#fff0f0"{% endif %}>
+      <tr {% if ev.voided %}style="opacity:.45;text-decoration:line-through"{% elif ev.threshold_exceeded %}style="background:#fff0f0"{% endif %}>
         <td>{{ ev.event_date.isoformat() }}</td>
-        <td>{{ ev.event_type.label }}</td>
+        <td>{{ ev.event_type.label }}{% if ev.passed is true %} ✓{% elif ev.passed is false %} ✗ failed{% endif %}</td>
         <td>{{ ev.technician.name }}</td>
         <td>{% if ev.pounds is not none %}{{ "%.1f"|format(ev.pounds) }}{% else %}—{% endif %}</td>
         <td>{% if ev.cylinder %}{{ ev.cylinder.serial }}{% else %}—{% endif %}</td>
-        <td>{% if ev.leak_rate_pct is not none %}{{ "%.2f"|format(ev.leak_rate_pct) }}%{% if ev.threshold_exceeded %} ⚠{% endif %}{% else %}—{% endif %}</td>
-        <td>{{ ev.notes }}</td>
+        <td>{% if ev.leak_rate_pct is not none %}{{ "%.2f"|format(ev.leak_rate_pct) }}%{% if ev.threshold_exceeded and not ev.voided %} ⚠{% endif %}{% else %}—{% endif %}</td>
+        <td>{% if ev.voided %}<small>VOID: {{ ev.void_reason }}</small> {% endif %}{{ ev.notes }}</td>
+        <td>
+          {% if not ev.voided %}
+          <a href="#" hx-post="/appliances/{{ appliance.id }}/events/{{ ev.id }}/void"
+             hx-prompt="Reason for voiding this event (kept in the audit trail):"
+             hx-target="#panel" hx-swap="outerHTML"
+             title="Void this event (audit-safe undo)">✖</a>
+          {% endif %}
+        </td>
       </tr>
       {% else %}
-      <tr><td colspan="7">No service events recorded.</td></tr>
+      <tr><td colspan="8">No service events recorded.</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -80,6 +111,12 @@
         <label>Event type
           <select name="event_type" required>
             {% for et in maintenance_types %}<option value="{{ et.value }}">{{ et.label }}</option>{% endfor %}
+          </select></label>
+        <label>Verification result <small>(verification tests only)</small>
+          <select name="result">
+            <option value="">n/a</option>
+            <option value="pass">Passed — repair holding</option>
+            <option value="fail">Failed — still leaking</option>
           </select></label>
         <label>Notes <input type="text" name="notes"></label>
         <button type="submit">Log event</button>

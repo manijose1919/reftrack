@@ -5,6 +5,17 @@
 {% if error %}<div class="flash-error">⚠ {{ error }}</div>{% endif %}
 {% if message %}<div class="flash-ok">✓ {{ message }}</div>{% endif %}
 
+<h4>Shop Profile <small>(printed on audit reports)</small></h4>
+<form method="post" action="/registry/shop">
+  <div class="grid">
+    <label>Shop name <input name="name" value="{{ shop.name }}" required></label>
+    <label>Address <input name="address" value="{{ shop.address }}"></label>
+    <label>Phone <input name="phone" value="{{ shop.phone }}"></label>
+    <label>EPA contact <input name="epa_contact" value="{{ shop.epa_contact }}"></label>
+  </div>
+  <button class="secondary">Save shop profile</button>
+</form>
+
 <h4>Cylinders</h4>
 <table>
   <thead><tr><th>Serial</th><th>Kind</th><th>Refrigerant</th><th>Fill</th><th>lbs</th></tr></thead>

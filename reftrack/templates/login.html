@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · RefTrack</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <style>
+    main { max-width: 420px; margin-top: 12vh; }
+    .flash-error { background:#ffe3e3; border:1px solid #ffa8a8; color:#8f1414;
+                   padding:.6rem .9rem; border-radius:6px; margin-bottom:1rem; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <h2>❄ RefTrack</h2>
+    {% if error %}<div class="flash-error">{{ error }}</div>{% endif %}
+    <form method="post" action="/login">
+      <label>Shop password
+        <input type="password" name="password" autofocus required>
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+  </main>
+</body>
+</html>

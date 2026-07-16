@@ -17,8 +17,9 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from reftrack.compliance import appliance_status
+from reftrack.compliance import appliance_status, chronic_events
 from reftrack.models import Appliance, ComplianceCase, Cylinder, ServiceEvent
+from reftrack.service import get_shop_profile
 
 
 def _events(db: Session, appliance_id: int) -> list[ServiceEvent]:
@@ -47,7 +48,7 @@ def appliance_csv(db: Session, appliance: Appliance) -> str:
     w.writerow([
         "date", "event_type", "technician", "epa_cert", "pounds",
         "cylinder_serial", "annualized_leak_rate_pct", "threshold_exceeded",
-        "notes",
+        "voided", "void_reason", "notes",
     ])
     for ev in _events(db, appliance.id):
         w.writerow([
@@ -59,7 +60,29 @@ def appliance_csv(db: Session, appliance: Appliance) -> str:
             ev.cylinder.serial if ev.cylinder else "",
             f"{ev.leak_rate_pct:.2f}" if ev.leak_rate_pct is not None else "",
             "yes" if ev.threshold_exceeded else "no",
+            "VOID" if ev.voided else "",
+            ev.void_reason,
             ev.notes,
+        ])
+    return buf.getvalue()
+
+
+def chronic_csv(db: Session) -> str:
+    """Additions above 125% annualized on 50+ lb appliances (chronically
+    leaking appliance reporting, 40 CFR 82.157(j))."""
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow([
+        "appliance", "customer", "refrigerant", "full_charge_lbs",
+        "event_date", "pounds_added", "annualized_leak_rate_pct",
+    ])
+    for ev in chronic_events(db):
+        a = ev.appliance
+        w.writerow([
+            a.name, a.customer.name, a.refrigerant_type,
+            f"{a.full_charge_lbs:.1f}", ev.event_date.isoformat(),
+            f"{ev.pounds:.2f}" if ev.pounds is not None else "",
+            f"{ev.leak_rate_pct:.2f}",
         ])
     return buf.getvalue()
 
@@ -104,8 +127,17 @@ def appliance_pdf(db: Session, appliance: Appliance, today: date) -> bytes:
     story = []
 
     st = appliance_status(db, appliance, today)
+    shop = get_shop_profile(db)
 
     story.append(Paragraph("Refrigerant Compliance Report", styles["Title"]))
+    shop_line = shop.name
+    if shop.address:
+        shop_line += f" &middot; {shop.address}"
+    if shop.phone:
+        shop_line += f" &middot; {shop.phone}"
+    if shop.epa_contact:
+        shop_line += f" &middot; EPA contact: {shop.epa_contact}"
+    story.append(Paragraph(shop_line, styles["Normal"]))
     story.append(Paragraph(
         "EPA Section 608 (40 CFR Part 82, Subpart F) service and leak-rate "
         f"record &mdash; generated {today.isoformat()}", small))
@@ -129,14 +161,17 @@ def appliance_pdf(db: Session, appliance: Appliance, today: date) -> bytes:
     rows = [["Date", "Event", "Technician (EPA cert)", "Lbs",
              "Leak rate", "Exceeded", "Notes"]]
     for ev in _events(db, appliance.id):
+        note = ev.notes or ""
+        if ev.voided:
+            note = f"VOIDED: {ev.void_reason}. {note}".strip()
         rows.append([
             ev.event_date.isoformat(),
-            ev.event_type.label,
+            ("VOID - " if ev.voided else "") + ev.event_type.label,
             f"{ev.technician.name} ({ev.technician.epa_cert_number})",
             f"{ev.pounds:.1f}" if ev.pounds is not None else "-",
             f"{ev.leak_rate_pct:.2f}%" if ev.leak_rate_pct is not None else "-",
-            "YES" if ev.threshold_exceeded else "",
-            Paragraph(ev.notes or "", small),
+            "YES" if ev.threshold_exceeded and not ev.voided else "",
+            Paragraph(note, small),
         ])
     if len(rows) == 1:
         rows.append(["-", "No service events on record", "", "", "", "", ""])
@@ -148,19 +183,25 @@ def appliance_pdf(db: Session, appliance: Appliance, today: date) -> bytes:
     story.append(Spacer(1, 16))
 
     story.append(Paragraph("Leak Exceedance &amp; Repair Timeline", styles["Heading2"]))
-    case_rows = [["Opened", "Leak rate", "Repair due", "Status", "Resolved"]]
+    case_rows = [["Opened", "Leak rate", "Repair due", "Status", "Resolved",
+                  "Retrofit/retirement plan"]]
     for case in _cases(db, appliance.id):
+        plan = "-"
+        if case.plan_date:
+            plan = f"{case.plan_date.isoformat()}: {case.plan_notes}"
         case_rows.append([
             case.opened_date.isoformat(),
             f"{case.leak_rate_pct:.2f}%",
             case.due_date.isoformat(),
             ("OVERDUE" if case.is_overdue(today) else case.status.value.title()),
             case.resolved_date.isoformat() if case.resolved_date else "-",
+            Paragraph(plan, small),
         ])
     if len(case_rows) == 1:
-        case_rows.append(["-", "No threshold exceedances on record", "", "", ""])
-    cases_tbl = Table(case_rows, colWidths=[1.2 * inch, 1.2 * inch, 1.2 * inch,
-                                            1.6 * inch, 1.2 * inch], repeatRows=1)
+        case_rows.append(["-", "No threshold exceedances on record", "", "", "", ""])
+    cases_tbl = Table(case_rows, colWidths=[0.85 * inch, 0.85 * inch, 0.85 * inch,
+                                            0.9 * inch, 0.85 * inch, 2.7 * inch],
+                      repeatRows=1)
     cases_tbl.setStyle(_GRID)
     story.append(cases_tbl)
     story.append(Spacer(1, 28))

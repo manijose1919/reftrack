@@ -68,6 +68,7 @@ class CaseStatus(str, enum.Enum):
     OPEN = "open"
     REPAIRED = "repaired"
     RETIRED = "retired"
+    VOIDED = "voided"  # opening event was voided / no longer exceeds
 
 
 class Customer(Base):
@@ -155,6 +156,13 @@ class ServiceEvent(Base):
     # Snapshot of the annualized leak rate computed at this event (additions only).
     leak_rate_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     threshold_exceeded: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Verification events: True = repair verified holding, False = failed.
+    passed: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # Void-instead-of-delete: the row stays for the audit trail, but voided
+    # events are excluded from leak-rate math, inventory, and reports' totals.
+    voided: Mapped[bool] = mapped_column(Boolean, default=False)
+    void_reason: Mapped[str] = mapped_column(String(300), default="")
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
@@ -181,6 +189,10 @@ class ComplianceCase(Base):
         ForeignKey("service_events.id"), nullable=True
     )
     resolved_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # 40 CFR 82.157: if not repaired in 30 days, a dated retrofit/retirement
+    # plan must be developed within 30 days. Record it here.
+    plan_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    plan_notes: Mapped[str] = mapped_column(Text, default="")
 
     appliance: Mapped["Appliance"] = relationship(back_populates="cases")
     opened_event: Mapped["ServiceEvent"] = relationship(foreign_keys=[opened_event_id])
@@ -190,3 +202,15 @@ class ComplianceCase(Base):
 
     def is_overdue(self, today: date) -> bool:
         return self.status == CaseStatus.OPEN and today > self.due_date
+
+
+class ShopProfile(Base):
+    """Single-row table: the shop's identity, printed on audit reports."""
+
+    __tablename__ = "shop_profile"
+
+    id: Mapped[int] = mapped_column(primary_key=True, default=1)
+    name: Mapped[str] = mapped_column(String(200), default="My HVAC Shop")
+    address: Mapped[str] = mapped_column(String(300), default="")
+    phone: Mapped[str] = mapped_column(String(50), default="")
+    epa_contact: Mapped[str] = mapped_column(String(200), default="")
