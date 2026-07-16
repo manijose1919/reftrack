@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}RefTrack{% endblock %} · RefTrack</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <style>
+    :root { --pico-font-size: 95%; }
+    .badge { display:inline-block; padding:.15rem .55rem; border-radius:999px;
+             font-size:.75rem; font-weight:600; white-space:nowrap; }
+    .badge-ok        { background:#d7f2dd; color:#14522a; }
+    .badge-watch     { background:#fff0c2; color:#6b5200; }
+    .badge-action_required { background:#ffd9c2; color:#8a3a00; }
+    .badge-overdue   { background:#ffc9c9; color:#8f1414; }
+    .badge-exempt    { background:#e4e7eb; color:#4a5560; }
+    .badge-retired   { background:#e4e7eb; color:#4a5560; text-decoration:line-through; }
+    .statgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+                gap:.75rem; margin-bottom:1.5rem; }
+    .stat { border:1px solid var(--pico-muted-border-color); border-radius:8px;
+            padding:.75rem 1rem; text-align:center; }
+    .stat b { font-size:1.6rem; display:block; }
+    .flash-error { background:#ffe3e3; border:1px solid #ffa8a8; color:#8f1414;
+                   padding:.6rem .9rem; border-radius:6px; margin-bottom:1rem; }
+    .flash-ok { background:#d7f2dd; border:1px solid #8ce0a4; color:#14522a;
+                padding:.6rem .9rem; border-radius:6px; margin-bottom:1rem; }
+    .fillbar { background:var(--pico-muted-border-color); border-radius:4px;
+               height:.6rem; overflow:hidden; min-width:90px; }
+    .fillbar span { display:block; height:100%; background:#4a83c6; }
+    table { font-size:.85rem; }
+    nav strong { font-size:1.1rem; }
+    .grid-forms { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+                  gap:1.25rem; }
+    fieldset { border:1px solid var(--pico-muted-border-color); border-radius:8px;
+               padding:1rem; }
+    legend { font-weight:700; padding:0 .4rem; }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul><li><strong>❄ RefTrack</strong></li></ul>
+      <ul>
+        <li><a href="/">Dashboard</a></li>
+        <li><a href="/registry">Registry</a></li>
+        <li><a href="/api/reports/cylinders.csv">Cylinder CSV</a></li>
+        <li><a href="/docs">API</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+  <footer class="container">
+    <small>RefTrack · EPA §608 refrigerant compliance · records retained per 40 CFR 82.157</small>
+  </footer>
+</body>
+</html>

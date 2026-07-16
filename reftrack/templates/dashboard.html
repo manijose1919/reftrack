@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h2>Compliance Dashboard</h2>
+
+<div class="statgrid">
+  {% for status, count in counts.items() %}
+  <div class="stat">
+    <b>{{ count }}</b>
+    <span class="badge badge-{{ status.value }}">{{ status.label }}</span>
+  </div>
+  {% endfor %}
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Appliance</th><th>Customer</th><th>Refrigerant</th>
+      <th>Charge (lbs)</th><th>Last leak rate</th><th>Threshold</th>
+      <th>Status</th><th>Repair due</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for st in statuses %}
+    <tr>
+      <td><a href="/appliances/{{ st.appliance.id }}">{{ st.appliance.name }}</a></td>
+      <td>{{ st.appliance.customer.name }}</td>
+      <td>{{ st.appliance.refrigerant_type }}</td>
+      <td>{{ "%.0f"|format(st.appliance.full_charge_lbs) }}</td>
+      <td>{% if st.current_leak_rate_pct is not none %}{{ "%.2f"|format(st.current_leak_rate_pct) }}%{% else %}—{% endif %}</td>
+      <td>{% if st.appliance.tracked %}{{ "%.0f"|format(st.threshold_pct) }}%{% else %}n/a{% endif %}</td>
+      <td><span class="badge badge-{{ st.status.value }}">{{ st.status.label }}</span></td>
+      <td>
+        {% if st.open_case %}
+          {{ st.open_case.due_date.isoformat() }}
+          {% if st.days_until_due is not none %}
+            ({% if st.days_until_due < 0 %}{{ -st.days_until_due }} days overdue{% else %}{{ st.days_until_due }} days left{% endif %})
+          {% endif %}
+        {% else %}—{% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="8">No appliances yet — add one in the <a href="/registry">Registry</a>.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

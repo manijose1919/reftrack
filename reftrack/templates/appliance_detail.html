@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ appliance.name }}{% endblock %}
+{% block content %}
+<h2>{{ appliance.name }}
+  {% if not appliance.tracked %}<span class="badge badge-exempt">Exempt &lt;50 lbs</span>{% endif %}
+</h2>
+<p>
+  <b>{{ appliance.customer.name }}</b>{% if appliance.location %} · {{ appliance.location }}{% endif %} ·
+  {{ appliance.refrigerant_type }} · full charge {{ "%.1f"|format(appliance.full_charge_lbs) }} lbs ·
+  {{ appliance.category.label }} · installed {{ appliance.install_date.isoformat() }}
+</p>
+<p>
+  <a href="/api/reports/appliance/{{ appliance.id }}.pdf" role="button" class="secondary">📄 Audit PDF</a>
+  <a href="/api/reports/appliance/{{ appliance.id }}.csv" role="button" class="secondary outline">⬇ History CSV</a>
+</p>
+
+{% include "_appliance_panel.html" %}
+{% endblock %}

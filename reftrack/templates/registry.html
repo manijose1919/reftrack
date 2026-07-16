@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Registry{% endblock %}
+{% block content %}
+<h2>Registry</h2>
+{% if error %}<div class="flash-error">⚠ {{ error }}</div>{% endif %}
+{% if message %}<div class="flash-ok">✓ {{ message }}</div>{% endif %}
+
+<h4>Cylinders</h4>
+<table>
+  <thead><tr><th>Serial</th><th>Kind</th><th>Refrigerant</th><th>Fill</th><th>lbs</th></tr></thead>
+  <tbody>
+    {% for c in cylinders %}
+    <tr>
+      <td>{{ c.serial }}</td>
+      <td>{{ c.kind.value.title() }}</td>
+      <td>{{ c.refrigerant_type }}</td>
+      <td><div class="fillbar"><span style="width:{{ (100 * c.current_lbs / c.capacity_lbs)|round|int }}%"></span></div></td>
+      <td>{{ "%.1f"|format(c.current_lbs) }} / {{ "%.0f"|format(c.capacity_lbs) }}</td>
+    </tr>
+    {% else %}<tr><td colspan="5">No cylinders.</td></tr>{% endfor %}
+  </tbody>
+</table>
+
+<h4>Customers &amp; Technicians</h4>
+<div class="grid">
+  <table>
+    <thead><tr><th>Customer</th><th>Address</th><th>Contact</th><th>Appliances</th></tr></thead>
+    <tbody>
+      {% for cu in customers %}
+      <tr><td>{{ cu.name }}</td><td>{{ cu.address }}</td><td>{{ cu.contact }}</td>
+          <td>{{ cu.appliances|length }}</td></tr>
+      {% else %}<tr><td colspan="4">No customers.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <table>
+    <thead><tr><th>Technician</th><th>EPA cert #</th><th>Type</th></tr></thead>
+    <tbody>
+      {% for t in technicians %}
+      <tr><td>{{ t.name }}</td><td>{{ t.epa_cert_number }}</td><td>{{ t.cert_type }}</td></tr>
+      {% else %}<tr><td colspan="3">No technicians.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h4>Add Records</h4>
+<div class="grid-forms">
+  <form method="post" action="/registry/customers">
+    <fieldset><legend>New Customer</legend>
+      <label>Name <input name="name" required></label>
+      <label>Address <input name="address"></label>
+      <label>Contact <input name="contact"></label>
+      <button>Add customer</button>
+    </fieldset>
+  </form>
+
+  <form method="post" action="/registry/technicians">
+    <fieldset><legend>New Technician</legend>
+      <label>Name <input name="name" required></label>
+      <label>EPA cert # <input name="epa_cert_number" required></label>
+      <label>Cert type
+        <select name="cert_type">
+          <option>Universal</option><option>Type I</option>
+          <option>Type II</option><option>Type III</option>
+        </select></label>
+      <button>Add technician</button>
+    </fieldset>
+  </form>
+
+  <form method="post" action="/registry/cylinders">
+    <fieldset><legend>New Cylinder</legend>
+      <label>Serial <input name="serial" required></label>
+      <label>Refrigerant <input name="refrigerant_type" placeholder="R-410A" required></label>
+      <label>Kind
+        <select name="kind">
+          <option value="supply">Supply</option>
+          <option value="recovery">Recovery</option>
+        </select></label>
+      <label>Capacity (lbs) <input type="number" name="capacity_lbs" step="0.1" min="0.1" required></label>
+      <label>Current (lbs) <input type="number" name="current_lbs" step="0.1" min="0" value="0"></label>
+      <button>Add cylinder</button>
+    </fieldset>
+  </form>
+
+  <form method="post" action="/registry/appliances">
+    <fieldset><legend>New Appliance</legend>
+      <label>Customer
+        <select name="customer_id" required>
+          {% for cu in customers %}<option value="{{ cu.id }}">{{ cu.name }}</option>{% endfor %}
+        </select></label>
+      <label>Name <input name="name" required></label>
+      <label>Location <input name="location"></label>
+      <label>Refrigerant <input name="refrigerant_type" placeholder="R-410A" required></label>
+      <label>Full charge (lbs) <input type="number" name="full_charge_lbs" step="0.1" min="0.1" required></label>
+      <label>Category
+        <select name="category">
+          <option value="comfort_cooling">Comfort Cooling (10%)</option>
+          <option value="commercial_refrigeration">Commercial Refrigeration (20%)</option>
+          <option value="industrial_process">Industrial Process (30%)</option>
+        </select></label>
+      <label>Install date <input type="date" name="install_date" required></label>
+      <button>Add appliance</button>
+    </fieldset>
+  </form>
+</div>
+{% endblock %}

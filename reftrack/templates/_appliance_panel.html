@@ -1,0 +1,92 @@
+{# Swappable panel: status, history, event forms. Target of all htmx posts. #}
+<div id="panel">
+  {% if error %}<div class="flash-error">⚠ {{ error }}</div>{% endif %}
+  {% if message %}<div class="flash-ok">✓ {{ message }}</div>{% endif %}
+
+  <div class="statgrid">
+    <div class="stat"><b>{% if st.current_leak_rate_pct is not none %}{{ "%.2f"|format(st.current_leak_rate_pct) }}%{% else %}—{% endif %}</b><span>Last leak rate</span></div>
+    <div class="stat"><b>{{ "%.0f"|format(st.threshold_pct) }}%</b><span>Threshold</span></div>
+    <div class="stat"><span class="badge badge-{{ st.status.value }}">{{ st.status.label }}</span><span>Status</span></div>
+    <div class="stat"><b>{% if st.open_case %}{{ st.open_case.due_date.isoformat() }}{% else %}—{% endif %}</b><span>Repair due</span></div>
+  </div>
+
+  <h4>Service History</h4>
+  <table>
+    <thead><tr><th>Date</th><th>Event</th><th>Technician</th><th>Lbs</th><th>Cylinder</th><th>Leak rate</th><th>Notes</th></tr></thead>
+    <tbody>
+      {% for ev in events %}
+      <tr {% if ev.threshold_exceeded %}style="background:#fff0f0"{% endif %}>
+        <td>{{ ev.event_date.isoformat() }}</td>
+        <td>{{ ev.event_type.label }}</td>
+        <td>{{ ev.technician.name }}</td>
+        <td>{% if ev.pounds is not none %}{{ "%.1f"|format(ev.pounds) }}{% else %}—{% endif %}</td>
+        <td>{% if ev.cylinder %}{{ ev.cylinder.serial }}{% else %}—{% endif %}</td>
+        <td>{% if ev.leak_rate_pct is not none %}{{ "%.2f"|format(ev.leak_rate_pct) }}%{% if ev.threshold_exceeded %} ⚠{% endif %}{% else %}—{% endif %}</td>
+        <td>{{ ev.notes }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7">No service events recorded.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if appliance.active %}
+  <h4>Log Service Event</h4>
+  <div class="grid-forms">
+    <form hx-post="/appliances/{{ appliance.id }}/events/charge" hx-target="#panel" hx-swap="outerHTML">
+      <fieldset>
+        <legend>Add Refrigerant</legend>
+        <label>Date <input type="date" name="event_date" value="{{ today }}" required></label>
+        <label>Technician
+          <select name="technician_id" required>
+            {% for t in technicians %}<option value="{{ t.id }}">{{ t.name }} ({{ t.epa_cert_number }})</option>{% endfor %}
+          </select></label>
+        <label>Supply cylinder
+          <select name="cylinder_id" required>
+            {% for c in supply_cylinders %}<option value="{{ c.id }}">{{ c.serial }} · {{ c.refrigerant_type }} · {{ "%.1f"|format(c.current_lbs) }} lbs left</option>{% endfor %}
+          </select></label>
+        <label>Pounds added <input type="number" name="pounds" step="0.1" min="0.1" required></label>
+        <label>Notes <input type="text" name="notes"></label>
+        <button type="submit">Log addition</button>
+      </fieldset>
+    </form>
+
+    <form hx-post="/appliances/{{ appliance.id }}/events/recovery" hx-target="#panel" hx-swap="outerHTML">
+      <fieldset>
+        <legend>Recover Refrigerant</legend>
+        <label>Date <input type="date" name="event_date" value="{{ today }}" required></label>
+        <label>Technician
+          <select name="technician_id" required>
+            {% for t in technicians %}<option value="{{ t.id }}">{{ t.name }} ({{ t.epa_cert_number }})</option>{% endfor %}
+          </select></label>
+        <label>Recovery cylinder
+          <select name="cylinder_id" required>
+            {% for c in recovery_cylinders %}<option value="{{ c.id }}">{{ c.serial }} · {{ "%.1f"|format(c.current_lbs) }}/{{ "%.0f"|format(c.capacity_lbs) }} lbs</option>{% endfor %}
+          </select></label>
+        <label>Pounds recovered <input type="number" name="pounds" step="0.1" min="0.1" required></label>
+        <label>Notes <input type="text" name="notes"></label>
+        <button type="submit">Log recovery</button>
+      </fieldset>
+    </form>
+
+    <form hx-post="/appliances/{{ appliance.id }}/events/maintenance" hx-target="#panel" hx-swap="outerHTML">
+      <fieldset>
+        <legend>Repair / Verification / Retire</legend>
+        <label>Date <input type="date" name="event_date" value="{{ today }}" required></label>
+        <label>Technician
+          <select name="technician_id" required>
+            {% for t in technicians %}<option value="{{ t.id }}">{{ t.name }} ({{ t.epa_cert_number }})</option>{% endfor %}
+          </select></label>
+        <label>Event type
+          <select name="event_type" required>
+            {% for et in maintenance_types %}<option value="{{ et.value }}">{{ et.label }}</option>{% endfor %}
+          </select></label>
+        <label>Notes <input type="text" name="notes"></label>
+        <button type="submit">Log event</button>
+      </fieldset>
+    </form>
+  </div>
+  {% else %}
+  <p><em>This appliance is retired; no further events can be logged.</em></p>
+  {% endif %}
+</div>
