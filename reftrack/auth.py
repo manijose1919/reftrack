@@ -8,7 +8,10 @@ this is a single-shop, shared-password model by design.
 
 import hashlib
 import hmac
+import logging
 import os
+
+logger = logging.getLogger("reftrack.auth")
 
 COOKIE_NAME = "reftrack_session"
 _EXEMPT_PREFIXES = ("/login", "/static/", "/health")
@@ -20,6 +23,24 @@ def password() -> str | None:
 
 def enabled() -> bool:
     return password() is not None
+
+
+def log_status() -> None:
+    """Announce the auth posture at startup: an operator who thinks the app is
+    protected when it isn't is worse off than one who knows it's open."""
+    raw = os.environ.get("REFTRACK_PASSWORD")
+    if raw is not None and not raw:
+        logger.warning(
+            "REFTRACK_PASSWORD is set but EMPTY - authentication is DISABLED. "
+            "Set a non-empty password, or unset the variable to silence this."
+        )
+    elif enabled():
+        logger.info("Authentication ENABLED (shared shop password).")
+    else:
+        logger.info(
+            "Authentication DISABLED - anyone who can reach this port can read "
+            "and edit records. Set REFTRACK_PASSWORD to require a login."
+        )
 
 
 def _expected_token() -> str:

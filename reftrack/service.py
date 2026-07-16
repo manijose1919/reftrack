@@ -4,6 +4,7 @@ All state transitions go through this module so the API and UI layers stay
 thin and every rule lives in exactly one place.
 """
 
+import logging
 from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -21,6 +22,8 @@ from reftrack.models import (
     ShopProfile,
     Technician,
 )
+
+logger = logging.getLogger("reftrack.service")
 
 # DOT/EPA safe-fill limit for recovery cylinders.
 RECOVERY_FILL_LIMIT = 0.80
@@ -287,13 +290,17 @@ def log_maintenance_event(
             case.resolved_date = event_date
 
     elif event_type == EventType.VERIFICATION_FOLLOWUP and passed is False:
-        # Repair did not hold: reopen the obligation as a new case carrying
-        # the leak rate of the most recently repaired case.
+        # The fix did not hold: reopen the obligation as a new case carrying
+        # the leak rate of the most recent resolved case. RETIRED covers a
+        # case closed by a retrofit -- a retrofit that still leaks reopens the
+        # obligation just as a failed repair does.
         prior = db.execute(
             select(ComplianceCase)
             .where(
                 ComplianceCase.appliance_id == appliance.id,
-                ComplianceCase.status == CaseStatus.REPAIRED,
+                ComplianceCase.status.in_(
+                    (CaseStatus.REPAIRED, CaseStatus.RETIRED)
+                ),
             )
             .order_by(ComplianceCase.opened_date.desc())
         ).scalars().first()
@@ -306,6 +313,15 @@ def log_maintenance_event(
                     due_date=event_date + timedelta(days=REPAIR_WINDOW_DAYS),
                     leak_rate_pct=prior.leak_rate_pct,
                 )
+            )
+        else:
+            # A failed verification with no prior exceedance on record does not
+            # itself create an EPA repair obligation (the obligation arises from
+            # exceeding a threshold). Log it: callers must not claim otherwise.
+            logger.info(
+                "Failed follow-up verification on appliance %s (%s) with no "
+                "prior compliance case; no repair obligation opened.",
+                appliance.id, appliance.name,
             )
 
     if event_type == EventType.RETIRED:
@@ -438,6 +454,15 @@ def recompute_appliance(db: Session, appliance: Appliance) -> None:
         ):
             case.status = CaseStatus.VOIDED
             continue
+
+        # The opener's rate may have been recomputed above; a surviving case
+        # must not keep the stale figure -- it prints onto the audit PDF.
+        if (
+            opener.event_type == EventType.CHARGE_ADDED
+            and opener.leak_rate_pct is not None
+        ):
+            case.leak_rate_pct = opener.leak_rate_pct
+
         if case.resolved_event_id is not None:
             resolver = db.get(ServiceEvent, case.resolved_event_id)
             if resolver is not None and resolver.voided:
@@ -445,6 +470,26 @@ def recompute_appliance(db: Session, appliance: Appliance) -> None:
                 case.status = CaseStatus.OPEN
                 case.resolved_event_id = None
                 case.resolved_date = None
+
+    # Invariant: an appliance has at most ONE live repair obligation. Reopening
+    # a case above can collide with a case opened later, and two OPEN rows make
+    # open_case() arbitrary -- a subsequent repair would close only one, and the
+    # survivor would then mask every future exceedance (log_charge_addition only
+    # opens a case when none is open). Both rows describe the same unrepaired
+    # leak, so keep the EARLIEST: its 30-day clock started first and is the
+    # binding deadline.
+    live = sorted(
+        (c for c in cases if c.status == CaseStatus.OPEN),
+        key=lambda c: (c.opened_date, c.id),
+    )
+    for duplicate in live[1:]:
+        duplicate.status = CaseStatus.SUPERSEDED
+        duplicate.resolved_event_id = None
+        duplicate.resolved_date = None
+        logger.info(
+            "Appliance %s: case %s superseded by earlier open case %s "
+            "(same unrepaired leak).", appliance.id, duplicate.id, live[0].id
+        )
     db.flush()
 
     # If an exceedance now has no case covering it (e.g. its case was voided
@@ -452,7 +497,7 @@ def recompute_appliance(db: Session, appliance: Appliance) -> None:
     # uncovered event. "Covered" = a live case was open on that event's date.
     def _covered(ev: ServiceEvent) -> bool:
         for c in cases:
-            if c.status == CaseStatus.VOIDED:
+            if c.status in (CaseStatus.VOIDED, CaseStatus.SUPERSEDED):
                 continue
             if c.opened_date <= ev.event_date and (
                 c.resolved_date is None or c.resolved_date >= ev.event_date

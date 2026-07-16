@@ -69,6 +69,14 @@ class CaseStatus(str, enum.Enum):
     REPAIRED = "repaired"
     RETIRED = "retired"
     VOIDED = "voided"  # opening event was voided / no longer exceeds
+    # Subsumed by an earlier still-open obligation for the same unrepaired
+    # leak (see service.recompute_appliance). Real history, not an error.
+    #
+    # NOTE: databases created before this value existed sized the column
+    # VARCHAR(8); "superseded" is 10 chars and only fits because SQLite does
+    # not enforce VARCHAR length. Porting to a backend that does (Postgres)
+    # requires widening compliance_cases.status first.
+    SUPERSEDED = "superseded"
 
 
 class Customer(Base):

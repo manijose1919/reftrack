@@ -64,6 +64,9 @@ compliance case with the regulatory **30-day repair deadline**.
 - Repairs, retrofits, and retirements resolve the case.
 - A **failed follow-up verification reopens the obligation** with a fresh 30-day
   clock, because a repair that didn't hold isn't a repair.
+- An appliance has **at most one live obligation** at a time. If corrections
+  produce two, RefTrack keeps the earliest — its clock started first, so it's
+  the binding deadline — and marks the other *superseded*.
 - You can record the dated **retrofit/retirement plan** required when equipment
   isn't repaired within 30 days.
 - Appliances over a **125% annualized leak rate** are flagged for chronically
@@ -147,9 +150,13 @@ All optional. RefTrack runs with zero configuration on localhost.
 |---|---|---|
 | `REFTRACK_DB` | `reftrack.db` | Path to the SQLite database file |
 | `REFTRACK_PASSWORD` | *(unset)* | Set to require a shared shop password to use the app |
+| `REFTRACK_LOG_LEVEL` | `INFO` | Log verbosity for RefTrack's own messages |
 | `BREVO_API_KEY` | *(unset)* | Brevo API key — enables email alerts on threshold breach |
 | `REFTRACK_ALERT_TO` | *(unset)* | Alert recipient address |
 | `REFTRACK_ALERT_FROM` | *(unset)* | Verified Brevo sender address |
+
+RefTrack announces its security posture and backup result on every startup —
+watch that first line if you care whether either is working.
 
 **Email alerts** need all three Brevo variables set; Brevo's free tier covers 300
 emails/day, which is far more than a small shop will ever send. Alerts are
@@ -167,6 +174,9 @@ deliberately not a user-account system.
 
 Your database is a single file. RefTrack **automatically copies it to
 `backups/reftrack-YYYYMMDD.db` on startup**, once per day, keeping the last 30.
+The copy is taken *before* any schema migration runs, so an upgrade always
+leaves you a pre-upgrade snapshot. A backup that fails logs loudly rather than
+passing in silence.
 
 That protects you from mistakes and corruption — **not from losing the PC**.
 These are legally required records with a 3-year retention obligation, so copy
@@ -186,7 +196,7 @@ reftrack/
   reports.py     CSV + ReportLab PDF        alerts.py    optional Brevo email
   auth.py        Optional shared-password sessions
   templates/     Jinja2      static/  vendored Pico.css + htmx — works fully offline
-tests/           57 tests, incl. EPA worked examples
+tests/           70 tests, incl. EPA worked examples
 ```
 
 Two principles hold the design together:
@@ -216,9 +226,15 @@ account. Interactive API docs at `/docs`.
 .venv/Scripts/python -m pytest tests/ -q
 ```
 
-57 tests. The leak-rate engine is verified against hand-computed EPA worked
+70 tests. The leak-rate engine is verified against hand-computed EPA worked
 examples; the suite also covers void/recompute cascades, case lifecycle
 transitions, cylinder inventory limits, auth enforcement, and report generation.
+
+Several tests exist specifically to pin down *compliance holes* found in review
+— a void orphaning a still-real exceedance, duplicate open cases masking future
+violations, an audit PDF printing a stale leak rate, and the UI claiming a
+repair clock that was never actually started. Those are the failures that would
+be invisible until an audit, so they get named tests.
 
 ---
 

@@ -222,6 +222,7 @@ def ui_maintenance(
     if technician is None:
         return _panel_response(request, db, appliance, error="Unknown technician.")
     passed = {"pass": True, "fail": False}.get(result)
+    case_before = service.open_case(db, appliance)
     try:
         service.log_maintenance_event(
             db, appliance=appliance, technician=technician,
@@ -230,9 +231,20 @@ def ui_maintenance(
         )
     except service.DomainError as exc:
         return _panel_response(request, db, appliance, error=str(exc))
+
+    # Report what the service layer actually did, never what the form asked
+    # for -- a message that claims a repair clock started when none did would
+    # be worse than no message at all.
     msg = f"Logged: {event_type.label}."
-    if event_type == EventType.VERIFICATION_FOLLOWUP and passed is False:
-        msg += " Failed verification — a new 30-day repair case was opened."
+    case_after = service.open_case(db, appliance)
+    if case_after is not None and case_after is not case_before:
+        msg += (f" A 30-day repair obligation is now open, due "
+                f"{case_after.due_date.isoformat()}.")
+    elif case_before is not None and case_after is None:
+        msg += " The open compliance case is now resolved."
+    elif event_type == EventType.VERIFICATION_FOLLOWUP and passed is False:
+        msg += (" Recorded as failed. No prior exceedance is on record for "
+                "this appliance, so no repair obligation was opened.")
     return _panel_response(request, db, appliance, message=msg)
 
 

@@ -4,6 +4,7 @@ Run:  uvicorn reftrack.main:app --reload
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -19,12 +20,34 @@ from reftrack.ui import router as ui_router, templates
 logger = logging.getLogger("reftrack")
 
 
+def _configure_logging() -> None:
+    """Give reftrack's loggers a handler of their own.
+
+    Running under uvicorn only configures uvicorn's loggers; without this,
+    reftrack's INFO/WARNING records propagate to a root logger with no handler
+    and vanish -- including "BACKUP FAILED" and the auth posture warning, which
+    are the two things an operator most needs to see.
+    """
+    root = logging.getLogger("reftrack")
+    if root.handlers:  # already configured (e.g. repeated app import in tests)
+        return
+    handler = logging.StreamHandler()
+    handler.setFormatter(
+        logging.Formatter("%(levelname)-8s %(name)s: %(message)s")
+    )
+    root.addHandler(handler)
+    root.setLevel(os.environ.get("REFTRACK_LOG_LEVEL", "INFO").upper())
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _configure_logging()
+    # Back up BEFORE init_db(): init_db migrates the schema in place, and the
+    # whole point of the backup is to capture the pre-migration state of
+    # records we are legally required to retain for three years.
+    backup_db()
     init_db()
-    made = backup_db()
-    if made:
-        logger.info("Daily database backup written to %s", made)
+    auth.log_status()
     yield
 
 
