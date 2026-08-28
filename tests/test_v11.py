@@ -430,6 +430,26 @@ def test_auth_enforced_when_password_set(world, monkeypatch):
     assert c2.get("/api/customers").status_code == 200
 
 
+def test_login_rate_limited_and_secure_cookie_flag(world, monkeypatch):
+    monkeypatch.setenv("REFTRACK_PASSWORD", "s3cret")
+    monkeypatch.setenv("REFTRACK_SECURE_COOKIES", "1")
+    auth.reset_login_attempts()
+    c = TestClient(app, follow_redirects=False)
+
+    for _ in range(auth.LOGIN_MAX_ATTEMPTS):
+        assert c.post("/login", data={"password": "wrong"}).status_code == 401
+    assert c.post("/login", data={"password": "wrong"}).status_code == 429
+    # Even the correct password is rejected while the window is open.
+    assert c.post("/login", data={"password": "s3cret"}).status_code == 429
+
+    auth.reset_login_attempts()
+    r = c.post("/login", data={"password": "s3cret"})
+    assert r.status_code == 303
+    # Starlette exposes cookie flags on the raw Set-Cookie header.
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "secure" in set_cookie.lower()
+
+
 # ---- Alerts ----------------------------------------------------------------------
 
 def test_alerts_disabled_without_env(monkeypatch):
@@ -458,6 +478,7 @@ def test_alert_dispatched_on_exceedance(world, monkeypatch):
     def _fake_post(url, json, headers, timeout):
         sent["url"] = url
         sent["subject"] = json["subject"]
+        sent["html"] = json["htmlContent"]
         sent["key"] = headers["api-key"]
         return _Resp()
 
@@ -468,6 +489,32 @@ def test_alert_dispatched_on_exceedance(world, monkeypatch):
     assert sent["key"] == "key-123"
     assert "RTU-1" in sent["subject"]
     assert "25.0" in sent["subject"]
+
+
+def test_alert_html_escapes_names(monkeypatch):
+    _enable_alerts(monkeypatch)
+    sent = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+    def _fake_post(url, json, headers, timeout):
+        sent["html"] = json["htmlContent"]
+        return _Resp()
+
+    monkeypatch.setattr(alerts.httpx, "post", _fake_post)
+    alerts.send_case_alert(
+        appliance_name="<rtu>",
+        customer_name="A & B",
+        leak_rate_pct=50.0,
+        threshold_pct=10.0,
+        due_date="2025-01-01",
+    )
+    alerts._last_thread.join(timeout=5)
+    assert "&lt;rtu&gt;" in sent["html"]
+    assert "A &amp; B" in sent["html"]
+    assert "<rtu>" not in sent["html"]
 
 
 def test_alert_failure_never_breaks_recording(world, monkeypatch):
