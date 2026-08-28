@@ -10,11 +10,15 @@ import hashlib
 import hmac
 import logging
 import os
+import time
 
 logger = logging.getLogger("reftrack.auth")
 
 COOKIE_NAME = "reftrack_session"
 _EXEMPT_PREFIXES = ("/login", "/static/", "/health")
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SEC = 60.0
+_login_hits: dict[str, list[float]] = {}
 
 
 def password() -> str | None:
@@ -66,3 +70,29 @@ def path_is_exempt(path: str) -> bool:
     return path == "/health" or any(
         path == p or path.startswith(p) for p in _EXEMPT_PREFIXES
     )
+
+
+def secure_cookies() -> bool:
+    """Set the Secure flag when serving over TLS (REFTRACK_SECURE_COOKIES=1)."""
+    return os.environ.get("REFTRACK_SECURE_COOKIES", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def login_rate_limited(client_id: str, *, now: float | None = None) -> bool:
+    """True when this client has exceeded the login-attempt budget."""
+    t = time.time() if now is None else now
+    hits = [h for h in _login_hits.get(client_id, []) if t - h < LOGIN_WINDOW_SEC]
+    if len(hits) >= LOGIN_MAX_ATTEMPTS:
+        _login_hits[client_id] = hits
+        return True
+    hits.append(t)
+    _login_hits[client_id] = hits
+    return False
+
+
+def reset_login_attempts() -> None:
+    """Test helper."""
+    _login_hits.clear()

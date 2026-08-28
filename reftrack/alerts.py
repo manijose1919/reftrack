@@ -12,6 +12,7 @@ are logged, never raised.
 
 import logging
 import os
+import html
 import threading
 
 import httpx
@@ -56,11 +57,12 @@ def send_case_alert(
             f"({leak_rate_pct:.1f}% > {threshold_pct:.0f}%)"
         ),
         "htmlContent": (
-            f"<p><b>{appliance_name}</b> at <b>{customer_name}</b> has an "
+            f"<p><b>{html.escape(appliance_name)}</b> at "
+            f"<b>{html.escape(customer_name)}</b> has an "
             f"annualized leak rate of <b>{leak_rate_pct:.2f}%</b>, exceeding "
             f"its EPA threshold of {threshold_pct:.0f}%.</p>"
             f"<p>The 30-day repair clock has started. "
-            f"<b>Repair due: {due_date}</b>.</p>"
+            f"<b>Repair due: {html.escape(due_date)}</b>.</p>"
             "<p>Log the repair (or retrofit/retirement plan) in RefTrack.</p>"
         ),
     }

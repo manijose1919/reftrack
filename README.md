@@ -150,6 +150,7 @@ All optional. RefTrack runs with zero configuration on localhost.
 |---|---|---|
 | `REFTRACK_DB` | `reftrack.db` | Path to the SQLite database file |
 | `REFTRACK_PASSWORD` | *(unset)* | Set to require a shared shop password to use the app |
+| `REFTRACK_SECURE_COOKIES` | unset | Set `1` when serving over HTTPS so the session cookie gets the Secure flag |
 | `REFTRACK_LOG_LEVEL` | `INFO` | Log verbosity for RefTrack's own messages |
 | `BREVO_API_KEY` | *(unset)* | Brevo API key — enables email alerts on threshold breach |
 | `REFTRACK_ALERT_TO` | *(unset)* | Alert recipient address |
@@ -165,8 +166,10 @@ Recording must never depend on a third-party API.
 
 **Authentication** is off by default (localhost, one PC, one shop). Set
 `REFTRACK_PASSWORD` and everyone shares one password; the session cookie is an
-HMAC derived from it, so changing the password signs everyone out. This is
-deliberately not a user-account system.
+HMAC derived from it, so changing the password signs everyone out. Login is
+rate-limited (5 attempts per minute per client). This is deliberately not a
+user-account system. Set `REFTRACK_SECURE_COOKIES=1` when the app is reached
+over HTTPS.
 
 ---
 

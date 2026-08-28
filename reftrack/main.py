@@ -78,6 +78,14 @@ def login_page(request: Request):
 
 @app.post("/login", include_in_schema=False)
 def login_submit(request: Request, password: str = Form(...)):
+    client_id = request.client.host if request.client else "unknown"
+    if auth.login_rate_limited(client_id):
+        return templates.TemplateResponse(
+            request,
+            "login.html",
+            {"error": "Too many attempts. Try again in a minute."},
+            status_code=429,
+        )
     token = auth.make_token(password)
     if token is None:
         return templates.TemplateResponse(
@@ -85,7 +93,13 @@ def login_submit(request: Request, password: str = Form(...)):
             status_code=401,
         )
     resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie(auth.COOKIE_NAME, token, httponly=True, samesite="lax")
+    resp.set_cookie(
+        auth.COOKIE_NAME,
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=auth.secure_cookies(),
+    )
     return resp
 
 
